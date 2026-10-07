@@ -1,13 +1,14 @@
 package com.hospital.hms.appointment.dto;
 
 import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
 
 public class AppointmentRequestDTO {
 
-    @NotNull(message = "Patient ID is required")
     private Long patientId;
 
     @NotNull(message = "Doctor ID is required")
@@ -16,6 +17,9 @@ public class AppointmentRequestDTO {
     @NotNull(message = "Appointment time is required")
     @Future(message = "Appointment time must be in the future")
     private LocalDateTime appointmentTime;
+    @NotBlank(message = "Visit reason is required")
+    @Size(max = 1000, message = "Visit reason cannot exceed 1000 characters")
+    private String reason;
 
     public AppointmentRequestDTO() {}
 
@@ -32,4 +36,6 @@ public class AppointmentRequestDTO {
     public void setDoctorId(Long doctorId) { this.doctorId = doctorId; }
     public LocalDateTime getAppointmentTime() { return appointmentTime; }
     public void setAppointmentTime(LocalDateTime appointmentTime) { this.appointmentTime = appointmentTime; }
+    public String getReason() { return reason; }
+    public void setReason(String reason) { this.reason = reason; }
 }

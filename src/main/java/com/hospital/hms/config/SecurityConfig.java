@@ -3,10 +3,11 @@ package com.hospital.hms.config;
 import com.hospital.hms.auth.security.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -14,6 +15,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -24,59 +26,43 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+
         http
+                // Disable CSRF for local testing
                 .csrf(csrf -> csrf.disable())
-                .cors(cors -> {}) // Uses CorsConfig settings
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/api/auth/login",
-                                "/api/auth/register",
-                                "/api/auth/reset-password",
-                                "/v3/api-docs/**",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html"
-                        ).permitAll()
 
-                        .requestMatchers("/api/auth/admin/**").hasRole("ADMIN")
-                        .requestMatchers("/api/audit/**").hasRole("ADMIN")
+                // Enable CORS
+                .cors(cors -> {})
 
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/admin/departments/**").authenticated()
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
-
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/doctors/**").authenticated()
-                        .requestMatchers("/api/doctors/**").hasAnyRole("ADMIN", "DOCTOR")
-
-                        .requestMatchers("/api/medical-records/**").hasAnyRole("DOCTOR", "ADMIN")
-
-
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/medicines/**").hasAnyRole("PHARMACIST", "DOCTOR", "ADMIN")
-                        .requestMatchers("/api/medicines/**").hasAnyRole("PHARMACIST", "ADMIN")
-                        .requestMatchers("/api/prescriptions/**").hasAnyRole("PHARMACIST", "DOCTOR", "ADMIN")
-
-
-                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/lab/tests").hasAnyRole("DOCTOR", "LAB_TECHNICIAN", "ADMIN")
-                        .requestMatchers("/api/lab/**").hasAnyRole("LAB_TECHNICIAN", "ADMIN")
-
-
-                        .requestMatchers("/api/bills/**", "/api/payments/**").hasAnyRole("FINANCE_OFFICER", "ADMIN")
-
-                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/appointments")
-                        .hasAnyRole("PATIENT", "RECEPTIONIST", "ADMIN")
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/appointments/**")
-                        .hasAnyRole("PATIENT", "DOCTOR", "RECEPTIONIST", "ADMIN")
-                        .requestMatchers("/api/appointments/**").hasAnyRole("RECEPTIONIST", "ADMIN")
-
-
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/patients/**").authenticated()
-                        .requestMatchers("/api/patients/**").hasAnyRole("RECEPTIONIST", "ADMIN")
-
-
-                        .requestMatchers("/api/dashboard/**").hasRole("ADMIN")
-
-                        .anyRequest().authenticated()
+                // Stateless session
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/", "/index.html", "/css/**", "/js/**", "/images/**",
+                                "/api/auth/login", "/api/auth/register", "/api/doctor-applications",
+                                "/swagger-ui/**", "/v3/api-docs/**", "/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/admin/departments", "/api/admin/departments/**")
+                                .hasAnyRole("ADMIN", "DOCTOR_RECORDS_MANAGER")
+                        .requestMatchers("/api/auth/admin/**", "/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/doctor-applications/**")
+                                .hasAnyRole("ADMIN", "DOCTOR_RECORDS_MANAGER")
+                        .requestMatchers("/api/audit/**", "/api/dashboard/**").hasRole("ADMIN")
+                        .requestMatchers("/api/lab/**").hasAnyRole("ADMIN", "LAB_TECHNICIAN")
+                        .requestMatchers("/api/medicines/**", "/api/prescriptions/**")
+                                .hasAnyRole("ADMIN", "PHARMACIST")
+                        .requestMatchers("/api/bills/**", "/api/payments/**")
+                                .hasAnyRole("ADMIN", "FINANCE_OFFICER")
+                        .requestMatchers("/api/**").authenticated()
+                        .anyRequest().permitAll()
+                )
+
+                // Keep JWT filter
+                .addFilterBefore(
+                        jwtAuthenticationFilter,
+                        UsernamePasswordAuthenticationFilter.class
+                );
 
         return http.build();
     }

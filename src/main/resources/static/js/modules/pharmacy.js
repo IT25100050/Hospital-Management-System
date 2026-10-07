@@ -1,4 +1,4 @@
-import { api } from "../api.js";
+import { api, getRole } from "../api.js";
 import {
   loadingLine, errorBanner, renderTable, panelHead, openFormModal, field,
   toast, confirmAction, fmtMoney, fmtDate, escapeHtml, el, nowForBackend
@@ -30,12 +30,13 @@ export async function renderPharmacy(container) {
 // Medicines
 // ---------------------------------------------------------------------------
 async function renderMedicines(body) {
+  const canManagePharmacy = ["ADMIN", "PHARMACIST"].includes(getRole());
   try {
     const medicines = await api.get("/api/medicines");
     medicinesCache = medicines || [];
     body.innerHTML =
       panelHead("Medicine Inventory", "Stock, pricing, and expiry for every medicine on hand.",
-        `<button class="btn btn-primary" id="add-med">+ Add medicine</button>`) +
+        canManagePharmacy ? `<button class="btn btn-primary" id="add-med">+ Add medicine</button>` : "") +
       renderTable({
         columns: [
           { key: "code", label: "Code", mono: true },
@@ -46,14 +47,14 @@ async function renderMedicines(body) {
           { key: "expiryDate", label: "Expiry" },
         ],
         rows: medicinesCache,
-        actions: (row) => `
+        actions: canManagePharmacy ? (row) => `
           <button class="btn btn-ghost btn-sm stock-med" data-id="${row.id}">Adjust stock</button>
           <button class="btn btn-ghost btn-sm edit-med" data-id="${row.id}">Edit</button>
-          <button class="btn btn-danger btn-sm del-med" data-id="${row.id}">Delete</button>`,
+          <button class="btn btn-danger btn-sm del-med" data-id="${row.id}">Delete</button>` : undefined,
         emptyMessage: "No medicines in inventory yet.",
       });
 
-    body.querySelector("#add-med").addEventListener("click", () => openMedicineModal());
+    body.querySelector("#add-med")?.addEventListener("click", () => openMedicineModal());
     body.querySelectorAll(".edit-med").forEach(b =>
       b.addEventListener("click", () => openMedicineModal(medicinesCache.find(m => String(m.id) === b.dataset.id))));
     body.querySelectorAll(".del-med").forEach(b =>
@@ -139,9 +140,13 @@ async function deleteMedicine(id, body) {
 // Prescriptions
 // ---------------------------------------------------------------------------
 async function renderPrescriptions(body) {
+  const canManagePharmacy = ["ADMIN", "PHARMACIST"].includes(getRole());
   try {
     const [prescriptions, patients, doctors, medicines] = await Promise.all([
-      api.get("/api/prescriptions"), api.get("/api/patients"), api.get("/api/doctors"), api.get("/api/medicines"),
+      api.get("/api/prescriptions"),
+      canManagePharmacy ? api.get("/api/patients/lookup") : Promise.resolve([]),
+      canManagePharmacy ? api.get("/api/doctors/lookup") : Promise.resolve([]),
+      api.get("/api/medicines"),
     ]);
     prescriptionsCache = prescriptions || [];
     patientsCache = patients || [];
@@ -150,7 +155,7 @@ async function renderPrescriptions(body) {
 
     body.innerHTML =
       panelHead("Prescriptions", "Medicines prescribed to patients by doctors.",
-        `<button class="btn btn-primary" id="add-rx">+ New prescription</button>`) +
+        canManagePharmacy ? `<button class="btn btn-primary" id="add-rx">+ New prescription</button>` : "") +
       renderTable({
         columns: [
           { key: "id", label: "ID", mono: true },
@@ -160,14 +165,14 @@ async function renderPrescriptions(body) {
           { key: "prescribedDate", label: "Date", render: r => fmtDate(r.prescribedDate) },
         ],
         rows: prescriptionsCache,
-        actions: (row) => `
+        actions: canManagePharmacy ? (row) => `
           <button class="btn btn-ghost btn-sm edit-rx" data-id="${row.id}">Edit</button>
           <button class="btn btn-ghost btn-sm fulfill-rx" data-id="${row.id}">Fulfill</button>
-          <button class="btn btn-danger btn-sm del-rx" data-id="${row.id}">Delete</button>`,
+          <button class="btn btn-danger btn-sm del-rx" data-id="${row.id}">Delete</button>` : undefined,
         emptyMessage: "No prescriptions yet.",
       });
 
-    body.querySelector("#add-rx").addEventListener("click", () => openPrescriptionModal());
+    body.querySelector("#add-rx")?.addEventListener("click", () => openPrescriptionModal());
     body.querySelectorAll(".edit-rx").forEach(b =>
       b.addEventListener("click", () => openPrescriptionModal(prescriptionsCache.find(r => String(r.id) === b.dataset.id))));
     body.querySelectorAll(".fulfill-rx").forEach(b =>

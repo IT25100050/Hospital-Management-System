@@ -89,7 +89,7 @@ export function renderTable({ columns, rows, actions, emptyMessage = "No records
 
 export function statusChip(status) {
   const map = {
-    PENDING: "amber", CONFIRMED: "blue", COMPLETED: "green", CANCELLED: "red",
+    PENDING: "amber", APPROVED: "blue", REJECTED: "red", CONFIRMED: "blue", COMPLETED: "green", CANCELLED: "red",
     ORDERED: "amber", IN_PROGRESS: "blue",
     PAID: "green", PARTIAL: "amber", REFUNDED: "grey",
   };

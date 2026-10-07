@@ -25,7 +25,7 @@ export async function renderBilling(container) {
 }
 
 async function ensurePatients() {
-  if (!patientsCache.length) patientsCache = (await api.get("/api/patients")) || [];
+  if (!patientsCache.length) patientsCache = (await api.get("/api/patients/lookup")) || [];
   return patientsCache;
 }
 

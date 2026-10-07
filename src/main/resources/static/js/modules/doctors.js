@@ -1,7 +1,7 @@
-import { api } from "../api.js";
+import { api, getRole } from "../api.js";
 import {
   loadingLine, errorBanner, renderTable, panelHead, openFormModal, field,
-  toast, confirmAction, fmtDate, escapeHtml, nowForBackend
+  toast, confirmAction, fmtDate, escapeHtml, nowForBackend, statusChip
 } from "../ui.js";
 
 let activeTab = "doctors";
@@ -15,6 +15,7 @@ export async function renderDoctors(container) {
     <div class="folder-tabs">
       <button data-tab="doctors" class="${activeTab === "doctors" ? "active" : ""}">Doctors</button>
       <button data-tab="records" class="${activeTab === "records" ? "active" : ""}">Medical Records</button>
+      <button data-tab="applications" class="${activeTab === "applications" ? "active" : ""}">Doctor Registration Requests</button>
     </div>
     <div class="tab-panel" id="doc-tab-body">${loadingLine()}</div>
   `;
@@ -23,7 +24,64 @@ export async function renderDoctors(container) {
 
   const body = container.querySelector("#doc-tab-body");
   if (activeTab === "doctors") await renderDoctorList(body);
-  else await renderRecords(body);
+  else if (activeTab === "records") await renderRecords(body);
+  else await renderApplications(body);
+}
+
+async function renderApplications(body) {
+  body.innerHTML = loadingLine("Loading doctor registration requests…");
+  try {
+    const applications = await api.get("/api/doctor-applications");
+    body.innerHTML = panelHead(
+      "Doctor Registration Requests",
+      "Review application details. Passwords and password hashes are never available here."
+    ) + renderTable({
+      columns: [
+        { key: "name", label: "Name" },
+        { key: "email", label: "Email" },
+        { key: "phoneNumber", label: "Phone" },
+        { key: "medicalRegistrationNumber", label: "Medical registration #" },
+        { key: "specialty", label: "Specialty" },
+        { key: "qualifications", label: "Qualifications" },
+        { key: "experience", label: "Experience (years)" },
+        { key: "status", label: "Status", render: row => statusChip(row.status) },
+        { key: "rejectionReason", label: "Review details" },
+      ],
+      rows: applications,
+      actions: row => row.status === "PENDING" ? `
+        <button class="btn btn-primary btn-sm approve-doctor" data-id="${row.id}">Approve</button>
+        <button class="btn btn-danger btn-sm reject-doctor" data-id="${row.id}">Reject</button>` : "",
+      emptyMessage: "There are no doctor registration requests.",
+    });
+    body.querySelectorAll(".approve-doctor").forEach(button => button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        await api.post(`/api/doctor-applications/${button.dataset.id}/review`, { status: "APPROVED" });
+        toast("Doctor registration approved; the doctor account is now active.", "success");
+        await renderApplications(body);
+      } catch (error) {
+        toast(error.message, "error");
+        button.disabled = false;
+      }
+    }));
+    body.querySelectorAll(".reject-doctor").forEach(button => button.addEventListener("click", () =>
+      openFormModal({
+        title: "Reject doctor registration",
+        submitLabel: "Reject application",
+        fieldsHtml: field({ name: "reason", label: "Reason for rejection", type: "textarea", required: true, full: true }),
+        onSubmit: async (formData, close) => {
+          await api.post(`/api/doctor-applications/${button.dataset.id}/review`, {
+            status: "REJECTED",
+            rejectionReason: formData.get("reason"),
+          });
+          toast("Doctor registration request rejected.", "success");
+          close();
+          await renderApplications(body);
+        },
+      })));
+  } catch (error) {
+    body.innerHTML = errorBanner(error.message);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +170,7 @@ async function deleteDoctor(id, body) {
 // Medical records
 // ---------------------------------------------------------------------------
 async function renderRecords(body) {
+  const canCreateRecords = getRole() === "ADMIN";
   try {
     const [patients, doctors, records] = await Promise.all([
       api.get("/api/patients"), doctorsCache.length ? doctorsCache : api.get("/api/doctors"),
@@ -122,8 +181,11 @@ async function renderRecords(body) {
     recordsCache = records || [];
 
     body.innerHTML =
-      panelHead("Medical Records", "Diagnoses and treatment notes written by doctors for patients.",
-        `<button class="btn btn-primary" id="add-record">+ New medical record</button>`) +
+      panelHead("Medical Records",
+        canCreateRecords
+          ? "Diagnoses and treatment notes written by doctors for patients."
+          : "View records, request edits for the assigned doctor's approval, or delete records directly.",
+        canCreateRecords ? `<button class="btn btn-primary" id="add-record">+ New medical record</button>` : "") +
       `<div class="two-col" style="margin-top:4px;">
         <form id="lookup-by-patient" class="form-grid">
           ${field({ name: "patientId", label: "Records for patient", type: "select", options: patientsCache.map(p => ({ value: p.id, label: `${p.name} (#${p.id})` })) })}
@@ -142,7 +204,7 @@ async function renderRecords(body) {
 
     attachRecordRowHandlers(body);
 
-    body.querySelector("#add-record").addEventListener("click", () => openRecordModal());
+    body.querySelector("#add-record")?.addEventListener("click", () => openRecordModal());
 
     body.querySelector("#show-all-records").addEventListener("click", async () => {
       const out = body.querySelector("#records-result");
@@ -183,6 +245,8 @@ async function renderRecords(body) {
 }
 
 function renderRecordsTable(records) {
+  const canEditRecords = getRole() === "ADMIN";
+  const isManager = getRole() === "DOCTOR_RECORDS_MANAGER";
   return renderTable({
     columns: [
       { key: "id", label: "ID", mono: true },
@@ -193,9 +257,13 @@ function renderRecordsTable(records) {
       { key: "recordDate", label: "Date", render: r => fmtDate(r.recordDate) },
     ],
     rows: records,
-    actions: (row) => `
-      <button class="btn btn-ghost btn-sm edit-record" data-id="${row.id}">Edit</button>
-      <button class="btn btn-danger btn-sm del-record" data-id="${row.id}">Delete</button>`,
+    actions: row => canEditRecords
+      ? `<button class="btn btn-ghost btn-sm edit-record" data-id="${row.id}">Edit</button>
+         <button class="btn btn-danger btn-sm del-record" data-id="${row.id}">Delete</button>`
+      : isManager
+        ? `<button class="btn btn-ghost btn-sm request-record-edit" data-id="${row.id}">Request edit</button>
+           <button class="btn btn-danger btn-sm del-record" data-id="${row.id}">Delete</button>`
+        : "",
     emptyMessage: "No medical records found.",
   });
 }
@@ -205,6 +273,9 @@ function attachRecordRowHandlers(body) {
     b.addEventListener("click", () => openRecordModal(recordsCache.find(r => String(r.id) === b.dataset.id))));
   body.querySelectorAll(".del-record").forEach(b =>
     b.addEventListener("click", () => deleteRecord(b.dataset.id, body)));
+  body.querySelectorAll(".request-record-edit").forEach(button =>
+    button.addEventListener("click", () => openRecordChangeRequest(
+      recordsCache.find(record => String(record.id) === button.dataset.id), body)));
 }
 
 function openRecordModal(existing) {
@@ -238,6 +309,32 @@ function openRecordModal(existing) {
       toast(existing ? "Medical record updated." : "Medical record saved.", "success");
       close();
       await renderDoctors(document.getElementById("page-content"));
+    },
+  });
+}
+
+function openRecordChangeRequest(record, body) {
+  if (!record) return;
+  openFormModal({
+    title: `Request edit — record #${record.id}`,
+    submitLabel: "Send for doctor approval",
+    fieldsHtml:
+      field({ name: "diagnosis", label: "Diagnosis", type: "textarea", required: true, full: true, value: record.diagnosis }) +
+      field({ name: "treatment", label: "Treatment", type: "textarea", full: true, value: record.treatment }) +
+      field({ name: "notes", label: "Notes", type: "textarea", full: true, value: record.notes }) +
+      field({ name: "requestReason", label: "Reason for requested change", type: "textarea", full: true }),
+    onSubmit: async (formData, close) => {
+      const payload = {
+        changeType: "EDIT",
+        requestReason: formData.get("requestReason"),
+        diagnosis: formData.get("diagnosis"),
+        treatment: formData.get("treatment"),
+        notes: formData.get("notes"),
+      };
+      await api.post(`/api/medical-records/${record.id}/change-requests`, payload);
+      toast(`Request sent to ${record.doctorName} for approval. The record has not been changed.`, "success");
+      close();
+      await renderRecords(body);
     },
   });
 }

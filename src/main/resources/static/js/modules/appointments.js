@@ -4,7 +4,6 @@ import {
   toast, confirmAction, fmtDate, statusChip, toLocalDateTimeInputValue
 } from "../ui.js";
 
-const APPT_STATUSES = ["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED"];
 // Mirrors the backend's SecurityConfig rules for these endpoints —
 // keep both in sync if permissions ever change.
 const CAN_BOOK_APPOINTMENT = ["PATIENT", "RECEPTIONIST", "ADMIN"];
@@ -57,24 +56,13 @@ async function renderAppts(body) {
         ],
         rows: [...(appts || [])].sort((a, b) => new Date(b.appointmentTime) - new Date(a.appointmentTime)),
         actions: canManage ? (row) => `
-          <select class="status-select" data-id="${row.id}" style="padding:5px 8px; font-size:12px;">
-            ${APPT_STATUSES.map(s => `<option value="${s}" ${s === row.status ? "selected" : ""}>${s}</option>`).join("")}
-          </select>
-          <button class="btn btn-ghost btn-sm edit-appt" data-id="${row.id}">Edit</button>
-          <button class="btn btn-danger btn-sm cancel-appt" data-id="${row.id}">Delete</button>` : undefined,
+          ${row.status === "PENDING" ? `<button class="btn btn-ghost btn-sm edit-appt" data-id="${row.id}">Edit</button>` : ""}
+          ${["PENDING", "APPROVED"].includes(row.status) ? `<button class="btn btn-danger btn-sm cancel-appt" data-id="${row.id}">Cancel</button>` : ""}` : undefined,
         emptyMessage: "No appointments booked yet.",
       });
 
     const addBtn = body.querySelector("#add-appt");
     if (addBtn) addBtn.addEventListener("click", () => openApptModal());
-    body.querySelectorAll(".status-select").forEach(sel =>
-      sel.addEventListener("change", async () => {
-        try {
-          await api.patch(`/api/appointments/${sel.dataset.id}/status`, undefined, { status: sel.value });
-          toast("Appointment status updated.", "success");
-          await renderAppts(body);
-        } catch (err) { toast(err.message, "error"); }
-      }));
     body.querySelectorAll(".edit-appt").forEach(b =>
       b.addEventListener("click", () => {
         const appt = (appts || []).find(a => String(a.id) === b.dataset.id);
@@ -82,10 +70,10 @@ async function renderAppts(body) {
       }));
     body.querySelectorAll(".cancel-appt").forEach(b =>
       b.addEventListener("click", async () => {
-        if (!confirmAction("Delete this appointment?")) return;
+        if (!confirmAction("Cancel this appointment?")) return;
         try {
           await api.del(`/api/appointments/${b.dataset.id}`);
-          toast("Appointment deleted.", "success");
+          toast("Appointment cancelled.", "success");
           await renderAppts(body);
         } catch (err) { toast(err.message, "error"); }
       }));
@@ -106,12 +94,14 @@ function openApptModal(existing) {
     fieldsHtml:
       field({ name: "patientId", label: "Patient", type: "select", required: true, full: true, value: existing?.patientId, options: patientsCache.map(p => ({ value: p.id, label: `${p.name} (#${p.id})` })) }) +
       field({ name: "doctorId", label: "Doctor", type: "select", required: true, full: true, value: existing?.doctorId, options: doctorsCache.map(d => ({ value: d.id, label: `Dr. ${d.name} — ${d.specialization}` })) }) +
-      field({ name: "appointmentTime", label: "Date & time", type: "datetime-local", required: true, full: true, value: toLocalDateTimeInputValue(defaultTime), hint: "Must be in the future." }),
+      field({ name: "appointmentTime", label: "Date & time", type: "datetime-local", required: true, full: true, value: toLocalDateTimeInputValue(defaultTime), hint: "Must be in the future." }) +
+      field({ name: "reason", label: "Reason for visit", type: "textarea", required: true, full: true, value: existing?.reason || "" }),
     onSubmit: async (fd, close) => {
       const payload = {
         patientId: Number(fd.get("patientId")),
         doctorId: Number(fd.get("doctorId")),
         appointmentTime: fd.get("appointmentTime"),
+        reason: fd.get("reason"),
       };
       if (existing) await api.put(`/api/appointments/${existing.id}`, payload);
       else await api.post("/api/appointments", payload);
