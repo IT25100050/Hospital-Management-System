@@ -1,5 +1,5 @@
-import { isAuthenticated, getUsername, getRole, clearSession, api } from "./api.js";
-import { renderLanding, renderLogin, renderRegister, renderResetPassword } from "./modules/auth.js";
+import { isAuthenticated, getUsername, getRole, getToken, setSession, clearSession, api } from "./api.js";
+import { renderLanding, renderLogin, renderRegister, renderDoctorRegister, renderResetPassword } from "./modules/auth.js";
 import { renderDashboard } from "./modules/dashboard.js";
 import { renderAdmin } from "./modules/admin.js";
 import { renderLaboratory } from "./modules/laboratory.js";
@@ -8,18 +8,21 @@ import { renderBilling } from "./modules/billing.js";
 import { renderDoctors } from "./modules/doctors.js";
 import { renderAppointments } from "./modules/appointments.js";
 import { renderAuditLogs } from "./modules/auditlogs.js";
-import { openFormModal, field, toast } from "./ui.js";
+import { renderPatientPortal, renderDoctorDashboard } from "./modules/workflows.js";
+import { openFormModal, field, toast, errorBanner } from "./ui.js";
 
-// Every nav item lists which roles may see and open it — this must mirror
-// the backend's SecurityConfig role rules, or a role will hit a 403 after clicking.
+// Every nav item lists which roles may see and open it. Backend API rules are
+// enforced separately, including permissions needed by screens that use other modules' data.
 const NAV = [
   { path: "dashboard", label: "Dashboard", icon: iconGrid(), render: renderDashboard, roles: ["ADMIN"] },
   { path: "admin", label: "Hospital Admin", icon: iconBuilding(), render: renderAdmin, roles: ["ADMIN"] },
   { path: "laboratory", label: "Laboratory", icon: iconFlask(), render: renderLaboratory, roles: ["ADMIN", "LAB_TECHNICIAN"] },
   { path: "pharmacy", label: "Pharmacy", icon: iconPill(), render: renderPharmacy, roles: ["ADMIN", "PHARMACIST"] },
   { path: "billing", label: "Billing", icon: iconReceipt(), render: renderBilling, roles: ["ADMIN", "FINANCE_OFFICER"] },
-  { path: "doctors", label: "Doctors & Records", icon: iconStethoscope(), render: renderDoctors, roles: ["ADMIN", "DOCTOR"] },
-  { path: "appointments", label: "Appointments", icon: iconCalendar(), render: renderAppointments, roles: ["ADMIN", "RECEPTIONIST", "DOCTOR", "PATIENT"] },
+  { path: "doctors", label: "Doctors & Records", icon: iconStethoscope(), render: renderDoctors, roles: ["ADMIN", "DOCTOR_RECORDS_MANAGER"] },
+  { path: "appointments", label: "Appointments", icon: iconCalendar(), render: renderAppointments, roles: ["ADMIN", "RECEPTIONIST"] },
+  { path: "patient-home", label: "My Hospital", icon: iconCalendar(), render: renderPatientPortal, roles: ["PATIENT"] },
+  { path: "doctor-dashboard", label: "Doctor Dashboard", icon: iconStethoscope(), render: renderDoctorDashboard, roles: ["DOCTOR"] },
   { path: "audit", label: "Audit Log", icon: iconShield(), render: renderAuditLogs, roles: ["ADMIN"] },
 ];
 
@@ -27,12 +30,13 @@ const NAV = [
 // dashboard, every other role goes straight to their own module.
 const ROLE_HOME = {
   ADMIN: "dashboard",
-  DOCTOR: "doctors",
+  DOCTOR: "doctor-dashboard",
+  DOCTOR_RECORDS_MANAGER: "doctors",
   PHARMACIST: "pharmacy",
   LAB_TECHNICIAN: "laboratory",
   FINANCE_OFFICER: "billing",
   RECEPTIONIST: "appointments",
-  PATIENT: "appointments",
+  PATIENT: "patient-home",
 };
 
 function navForRole(role) {
@@ -50,18 +54,30 @@ function currentPath() {
 
 async function route() {
   const path = currentPath();
-  const role = getRole();
 
   if (!isAuthenticated()) {
     stopTopbarClock();
     if (path === "" || path === "home") renderLanding(appEl);
     else if (path === "register") renderRegister(appEl);
-    else if (path === "reset-password") renderResetPassword(appEl);
+    else if (path === "doctor-register") renderDoctorRegister(appEl);
+    else if (path === "reset-password") renderLogin(appEl);
     else renderLogin(appEl);
     return;
   }
 
-  if (path === "login" || path === "register" || path === "reset-password" || path === "home" || path === "") {
+  try {
+    const currentUser = await api.get("/api/auth/me");
+    if (currentUser.role !== getRole() || currentUser.username !== getUsername()) {
+      setSession(getToken(), currentUser.username, currentUser.role);
+    }
+  } catch (error) {
+    appEl.innerHTML = `<main class="content">${errorBanner(`Could not verify your account access: ${error.message}`)}</main>`;
+    return;
+  }
+
+  const role = getRole();
+
+  if (path === "login" || path === "register" || path === "doctor-register" || path === "reset-password" || path === "home" || path === "") {
     window.location.hash = "#/" + homeForRole(role);
     return;
   }

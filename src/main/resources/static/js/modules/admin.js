@@ -4,7 +4,17 @@ import {
   toast, confirmAction, escapeHtml
 } from "../ui.js";
 
-const ROLES = ["ADMIN", "DOCTOR", "PHARMACIST", "LAB_TECHNICIAN", "RECEPTIONIST", "PATIENT"];
+const ROLES = ["ADMIN", "DOCTOR_RECORDS_MANAGER", "DOCTOR", "PHARMACIST", "LAB_TECHNICIAN", "RECEPTIONIST", "FINANCE_OFFICER", "PATIENT"];
+const ROLE_LABELS = {
+  ADMIN: "ADMIN — Full system access",
+  DOCTOR_RECORDS_MANAGER: "Doctor & Medical Record Manager (restricted)",
+  DOCTOR: "DOCTOR",
+  PHARMACIST: "PHARMACIST",
+  LAB_TECHNICIAN: "LAB TECHNICIAN",
+  RECEPTIONIST: "RECEPTIONIST",
+  FINANCE_OFFICER: "FINANCE OFFICER",
+  PATIENT: "PATIENT",
+};
 
 let activeTab = "departments";
 let departmentsCache = [];
@@ -33,30 +43,106 @@ export async function renderAdmin(container) {
 }
 
 // ---------------------------------------------------------------------------
-// Login accounts (users) — view + force-reset a forgotten password
+// Login accounts (users) — manage roles and force-reset forgotten passwords
 // ---------------------------------------------------------------------------
 async function renderUsers(body) {
   try {
     const users = await api.get("/api/auth/admin/users");
     body.innerHTML =
-      panelHead("Login Accounts", "Everyone who can log into Medicore, and their role. Reset a password here if someone has forgotten theirs.") +
+      panelHead("Login Accounts", "Create accounts with assigned roles, manage access, and reset forgotten passwords. Doctor & Medical Record Manager is limited to doctor profiles, registration approvals, and medical records. ADMIN retains full system access; DOCTOR accounts are created through approved doctor registration.",
+        `<button class="btn btn-primary" id="add-user">+ Create account</button>`) +
       renderTable({
         columns: [
           { key: "id", label: "ID", mono: true },
           { key: "username", label: "Username" },
           { key: "email", label: "Email" },
-          { key: "role", label: "Role", render: r => `<span class="chip chip-blue">${escapeHtml(r.role)}</span>` },
+          { key: "role", label: "Role", render: r => `<span class="chip chip-blue">${escapeHtml(ROLE_LABELS[r.role] || r.role)}</span>` },
         ],
         rows: users,
-        actions: (row) => `<button class="btn btn-ghost btn-sm reset-pw" data-username="${escapeHtml(row.username)}">Reset password</button>`,
+        actions: (row) => `
+          <button class="btn btn-ghost btn-sm change-role" data-username="${escapeHtml(row.username)}" data-role="${escapeHtml(row.role)}">Change role</button>
+          <button class="btn btn-ghost btn-sm reset-pw" data-username="${escapeHtml(row.username)}">Reset password</button>
+          <button class="btn btn-danger btn-sm delete-user" data-username="${escapeHtml(row.username)}">Delete account</button>`,
         emptyMessage: "No user accounts found.",
       });
 
+    body.querySelector("#add-user").addEventListener("click", () => openAdminCreateUserModal(body));
     body.querySelectorAll(".reset-pw").forEach(b =>
       b.addEventListener("click", () => openAdminResetModal(b.dataset.username)));
+    body.querySelectorAll(".change-role").forEach(b =>
+      b.addEventListener("click", () => openRoleModal(b.dataset.username, b.dataset.role)));
+    body.querySelectorAll(".delete-user").forEach(button =>
+      button.addEventListener("click", () => deleteUserAccount(button.dataset.username, body)));
   } catch (err) {
     body.innerHTML = errorBanner(err.message);
   }
+}
+
+async function deleteUserAccount(username, body) {
+  if (!confirmAction(`Delete the login account for ${username}? Any linked patient or doctor profile and clinical history will be retained, but that account will no longer be able to sign in.`)) {
+    return;
+  }
+  try {
+    await api.del(`/api/auth/admin/users/${encodeURIComponent(username)}`);
+    toast(`Login account ${username} deleted. Linked profile/history was retained.`, "success");
+    await renderUsers(body);
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+function openAdminCreateUserModal(body) {
+  const creatableRoles = ROLES.filter(role => role !== "DOCTOR");
+  openFormModal({
+    title: "Create login account",
+    submitLabel: "Create account",
+    fieldsHtml:
+      field({ name: "username", label: "Username", required: true }) +
+      field({ name: "email", label: "Email", type: "email", required: true }) +
+      field({ name: "password", label: "Temporary password", type: "password", required: true, hint: "At least 8 characters." }) +
+      field({
+        name: "role", label: "Account role", type: "select", required: true,
+        options: creatableRoles.map(role => ({ value: role, label: ROLE_LABELS[role] })),
+      }) +
+      `<div class="small-note full">Doctor accounts are activated only through approval of a doctor registration request.</div>`,
+    onSubmit: async (fd, close) => {
+      const account = await api.post("/api/auth/admin/users", {
+        username: fd.get("username"),
+        email: fd.get("email"),
+        password: fd.get("password"),
+        role: fd.get("role"),
+      });
+      toast(`Account created for ${account.username} with role ${account.role}.`, "success");
+      close();
+      await renderUsers(body);
+    },
+  });
+}
+
+function openRoleModal(username, currentRole) {
+  openFormModal({
+    title: `Change role — ${username}`,
+    submitLabel: "Save role",
+    fieldsHtml:
+      `<div class="small-note" style="margin-bottom:10px;">Doctor & Medical Record Manager grants access only to doctor profiles, doctor registration approvals, and medical records. ADMIN retains full system access. DOCTOR is available only to accounts with an approved doctor profile.</div>` +
+      field({
+        name: "role",
+        label: "Account role",
+        type: "select",
+        required: true,
+        value: currentRole,
+        full: true,
+        options: ROLES.map(role => ({ value: role, label: ROLE_LABELS[role] })),
+      }),
+    onSubmit: async (fd, close) => {
+      await api.put(`/api/auth/admin/users/${encodeURIComponent(username)}/role`, {
+        role: fd.get("role"),
+      });
+      toast(`Role updated for ${username}.`, "success");
+      close();
+      await renderUsers(document.getElementById("admin-tab-body"));
+    },
+  });
 }
 
 function openAdminResetModal(username) {

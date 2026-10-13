@@ -1,18 +1,17 @@
 import { api, setSession } from "../api.js";
 import { toast, escapeHtml } from "../ui.js";
 
-const ROLES = ["ADMIN", "DOCTOR", "PHARMACIST", "LAB_TECHNICIAN", "RECEPTIONIST", "FINANCE_OFFICER", "PATIENT"];
-
 // Same mapping used in app.js — kept here too so the login redirect
 // doesn't need to import the router module.
 const ROLE_HOME = {
   ADMIN: "dashboard",
-  DOCTOR: "doctors",
+  DOCTOR: "doctor-dashboard",
+  DOCTOR_RECORDS_MANAGER: "doctors",
   PHARMACIST: "pharmacy",
   LAB_TECHNICIAN: "laboratory",
   FINANCE_OFFICER: "billing",
   RECEPTIONIST: "appointments",
-  PATIENT: "appointments",
+  PATIENT: "patient-home",
 };
 
 const CROSS_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/></svg>`;
@@ -243,7 +242,7 @@ export function renderLogin(container) {
     <div class="auth-main">
         <div class="auth-card">
           <h1>Sign in</h1>
-          <p class="sub">Enter your Medicore staff credentials.</p>
+          <p class="sub">Sign in to your MediCore account.</p>
           <div id="auth-error"></div>
           <form id="login-form">
             <div class="field" style="margin-bottom:14px;">
@@ -256,11 +255,8 @@ export function renderLogin(container) {
             </div>
             <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Sign in</button>
           </form>
-          <div class="auth-links">
-            <a href="#/reset-password">Reset password</a>
-          </div>
           <div class="auth-switch">
-            New to Medicore? <button id="go-register">Create a staff account</button>
+            New to MediCore? <button id="go-register">Create a patient account</button>
           </div>
         </div>
     </div>`);
@@ -298,13 +294,13 @@ export function renderRegister(container) {
   container.innerHTML = publicShell("register", `
     <div class="auth-main">
         <div class="auth-card">
-          <h1>Create staff account</h1>
-          <p class="sub">Register a login for a department user.</p>
+          <h1>Create patient account</h1>
+          <p class="sub">Register securely to book and manage your appointments.</p>
           <div id="auth-error"></div>
           <form id="register-form">
             <div class="field" style="margin-bottom:14px;">
-              <label for="username">Username</label>
-              <input id="username" name="username" type="text" required autofocus />
+              <label for="username">Full name</label>
+              <input id="username" name="username" type="text" required minlength="2" maxlength="100" autofocus />
             </div>
             <div class="field" style="margin-bottom:14px;">
               <label for="email">Email</label>
@@ -312,18 +308,12 @@ export function renderRegister(container) {
             </div>
             <div class="field" style="margin-bottom:14px;">
               <label for="password">Password</label>
-              <input id="password" name="password" type="password" required minlength="4" />
+              <input id="password" name="password" type="password" required minlength="8" />
             </div>
-            <div class="field" style="margin-bottom:18px;">
-              <label for="role">Role</label>
-              <select id="role" name="role" required>
-                ${ROLES.map(r => `<option value="${r}">${r.replace("_", " ")}</option>`).join("")}
-              </select>
-            </div>
-            <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Create account</button>
+            <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Create patient account</button>
           </form>
-          <div class="auth-links">
-            <a href="#/reset-password">Reset password</a>
+          <div class="auth-switch" style="margin-top:16px;">
+            Medical professional? <a href="#/doctor-register">Register as a Doctor</a>
           </div>
           <div class="auth-switch">
             Already registered? <button id="go-login">Sign in</button>
@@ -344,20 +334,74 @@ export function renderRegister(container) {
         username: fd.get("username"),
         email: fd.get("email"),
         password: fd.get("password"),
-        role: fd.get("role"),
       });
-      toast("Account created. Please sign in.", "success");
+      toast("Patient account created. Please sign in.", "success");
       window.location.hash = "#/login";
     } catch (err) {
       errBox.innerHTML = `<div class="error-banner">${escapeHtml(err.message)}</div>`;
     } finally {
       btn.disabled = false;
-      btn.textContent = "Create account";
+      btn.textContent = "Create patient account";
     }
   });
 
   container.querySelector("#go-login").addEventListener("click", () => {
     window.location.hash = "#/login";
+  });
+}
+
+export function renderDoctorRegister(container) {
+  container.innerHTML = publicShell("register", `
+    <div class="auth-main">
+      <div class="auth-card">
+        <h1>Register as a Doctor</h1>
+        <p class="sub">Your account will be created after hospital management approves your application.</p>
+        <div id="auth-error"></div>
+        <form id="doctor-register-form">
+          <div class="field" style="margin-bottom:14px;"><label for="name">Full name</label><input id="name" name="name" required maxlength="100" /></div>
+          <div class="field" style="margin-bottom:14px;"><label for="email">Email</label><input id="email" name="email" type="email" required maxlength="254" /></div>
+          <div class="field" style="margin-bottom:14px;"><label for="password">Password</label><input id="password" name="password" type="password" required minlength="8" /></div>
+          <div class="field" style="margin-bottom:14px;"><label for="phoneNumber">Phone number</label><input id="phoneNumber" name="phoneNumber" required pattern="[0-9+() -]{7,20}" /></div>
+          <div class="field" style="margin-bottom:14px;"><label for="medicalRegistrationNumber">Medical registration number</label><input id="medicalRegistrationNumber" name="medicalRegistrationNumber" required maxlength="100" /></div>
+          <div class="field" style="margin-bottom:14px;"><label for="specialty">Specialty</label><input id="specialty" name="specialty" required maxlength="100" /></div>
+          <div class="field" style="margin-bottom:14px;"><label for="qualifications">Qualifications</label><textarea id="qualifications" name="qualifications" required maxlength="500"></textarea></div>
+          <div class="field" style="margin-bottom:18px;"><label for="experience">Experience (years)</label><input id="experience" name="experience" type="number" min="0" max="80" required /></div>
+          <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">Submit application</button>
+        </form>
+        <div class="auth-switch">Already have an account? <a href="#/login">Sign in</a></div>
+      </div>
+    </div>`);
+
+  container.querySelector("#doctor-register-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const error = container.querySelector("#auth-error");
+    const button = form.querySelector("button[type=submit]");
+    error.innerHTML = "";
+    button.disabled = true;
+    button.textContent = "Submitting…";
+    try {
+      const formData = new FormData(form);
+      await api.post("/api/doctor-applications", {
+        name: formData.get("name"),
+        email: formData.get("email"),
+        password: formData.get("password"),
+        phoneNumber: formData.get("phoneNumber"),
+        medicalRegistrationNumber: formData.get("medicalRegistrationNumber"),
+        specialty: formData.get("specialty"),
+        qualifications: formData.get("qualifications"),
+        experience: Number(formData.get("experience")),
+      });
+      toast("Your doctor registration is pending approval.", "success");
+      container.innerHTML = publicShell("register", `<div class="auth-main"><div class="auth-card"><h1>Application submitted</h1><p class="sub">Your doctor registration is pending approval.</p><a class="btn btn-primary" href="#/login">Return to sign in</a></div></div>`);
+    } catch (err) {
+      error.innerHTML = `<div class="error-banner">${escapeHtml(err.message)}</div>`;
+    } finally {
+      if (button.isConnected) {
+        button.disabled = false;
+        button.textContent = "Submit application";
+      }
+    }
   });
 }
 

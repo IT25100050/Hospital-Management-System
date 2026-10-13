@@ -1,7 +1,7 @@
 package com.hospital.hms.audit.aspect;
 
 import com.hospital.hms.audit.model.AuditLog;
-import com.hospital.hms.audit.repository.AuditLogRepository;
+import com.hospital.hms.audit.service.AuditLogWriter;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.AfterReturning;
 import org.aspectj.lang.annotation.AfterThrowing;
@@ -21,10 +21,10 @@ import java.time.LocalDateTime;
 @Component
 public class AuditAspect {
 
-    private final AuditLogRepository auditLogRepository;
+    private final AuditLogWriter auditLogWriter;
 
-    public AuditAspect(AuditLogRepository auditLogRepository) {
-        this.auditLogRepository = auditLogRepository;
+    public AuditAspect(AuditLogWriter auditLogWriter) {
+        this.auditLogWriter = auditLogWriter;
     }
 
     @AfterReturning("execution(* com.hospital.hms..*ServiceImpl.*(..)) && !within(com.hospital.hms.audit..*)")
@@ -52,7 +52,7 @@ public class AuditAspect {
                 LocalDateTime.now()
         );
 
-        auditLogRepository.save(auditLog);
+        auditLogWriter.write(auditLog);
     }
 
     private String deriveAction(String methodName) {

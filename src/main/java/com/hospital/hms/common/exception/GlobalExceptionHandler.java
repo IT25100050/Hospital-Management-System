@@ -8,6 +8,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -35,6 +37,12 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleForbidden(AccessDeniedException ex) {
+        return new ResponseEntity<>(new ApiResponse<>(false, "You do not have permission to perform this action.", null),
+                HttpStatus.FORBIDDEN);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneral(Exception ex) {
         return new ResponseEntity<>(
@@ -59,5 +67,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InsufficientStockException.class)
     public ResponseEntity<ApiResponse<Void>> handleInsufficientStock(InsufficientStockException ex) {
         return new ResponseEntity<>(new ApiResponse<>(false, ex.getMessage(), null), HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConstraintViolation(DataIntegrityViolationException ex) {
+        return new ResponseEntity<>(new ApiResponse<>(false,
+                "A record with one of these unique values already exists.", null), HttpStatus.CONFLICT);
     }
 }
